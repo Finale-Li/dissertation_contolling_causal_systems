@@ -1,0 +1,457 @@
+---
+title: "Data Analysis"
+author: "Finale"
+date: "2024-05-07"
+output: html_document
+---
+
+```{r}
+#packages installation 
+library(RMySQL)
+library(DBI)
+library(tidyverse)
+library(tidyr)
+library(dplyr)
+library(stringr)
+library(jsonlite)
+library(ggplot2)
+library(readr)
+library(purrr)
+library(readxl)
+library(lme4)
+library(Matrix)
+library(patchwork)
+library(broom.mixed)
+library(knitr)
+library(devtools)
+library(sjPlot)
+library(broom)
+library(rempsyc)
+library(gt)
+library(rlang)
+library(kableExtra)
+library(performance)
+```
+
+```{r}
+#Loading the data
+df_h <- read_excel("human_data(without_repitition).xlsx", 
+                                             col_types = c("text", "numeric", "numeric", 
+                                                           "numeric", "text", "text", "numeric", 
+                                                           "numeric", "text", "numeric", "numeric", 
+                                                           "numeric", "numeric", "numeric", "numeric", 
+                                                           "numeric", "numeric", "numeric", "numeric", "numeric", 
+                                                           "numeric", "numeric", "numeric", "numeric", "numeric", 
+                                                           "numeric", "numeric", "numeric", "numeric", "numeric", 
+                                                           "numeric", "numeric", "numeric", "numeric", "numeric", 
+                                                           "numeric", "numeric", "numeric", "numeric", "numeric", 
+                                                           "numeric", "numeric", "numeric", "numeric", "numeric", 
+                                                           "numeric", "numeric", "numeric", "numeric", "numeric", 
+                                                           "numeric", "numeric", "numeric", "numeric", "numeric", 
+                                                           "numeric", "numeric", "numeric", "numeric", "numeric", 
+                                                           "numeric", "numeric", "numeric", "numeric", "numeric", 
+                                                           "numeric", "numeric", "numeric", "numeric", "numeric", 
+                                                           "numeric", "numeric", "numeric"))
+
+
+df_ai <- read_excel("gpt3_5.xlsx", col_types = c("text", 
+                                                  "numeric", "numeric", "numeric", "numeric", 
+                                                  "numeric", "numeric", "numeric", "numeric", 
+                                                  "numeric", "numeric", "numeric", "numeric", 
+                                                  "numeric", "numeric", "numeric", "numeric", 
+                                                  "numeric", "numeric", "numeric", "numeric", 
+                                                  "numeric", "numeric", "numeric", "numeric", 
+                                                  "numeric", "numeric", "numeric", "numeric", 
+                                                  "numeric", "numeric", "numeric", "numeric", 
+                                                  "numeric", "numeric", "numeric", "numeric", 
+                                                  "numeric", "numeric", "numeric", "numeric", 
+                                                  "numeric", "numeric", "numeric", "numeric", 
+                                                  "numeric", "numeric", "numeric", "numeric", 
+                                                  "numeric", "numeric", "numeric", "numeric", 
+                                                  "numeric", "numeric", "numeric", "numeric", 
+                                                  "numeric", "numeric", "numeric", "numeric", 
+                                                  "numeric", "numeric", "numeric", "numeric"))
+
+
+df_gpt4 <- read_excel("gpt4.xlsx", col_types = c("text", 
+                                                         "numeric", "numeric", "numeric", "numeric", 
+                                                         "numeric", "numeric", "numeric", "numeric", 
+                                                         "numeric", "numeric", "numeric", "numeric", 
+                                                         "numeric", "numeric", "numeric", "numeric", 
+                                                         "numeric", "numeric", "numeric", "numeric", 
+                                                         "numeric", "numeric", "numeric", "numeric", 
+                                                         "numeric", "numeric", "numeric", "numeric", 
+                                                         "numeric", "numeric", "numeric", "numeric", 
+                                                         "numeric", "numeric", "numeric", "numeric", 
+                                                         "numeric", "numeric", "numeric", "numeric", 
+                                                         "numeric", "numeric", "numeric", "numeric", 
+                                                         "numeric", "numeric", "numeric", "numeric", 
+                                                         "numeric", "numeric", "numeric", "numeric", 
+                                                         "numeric", "numeric", "numeric", "numeric", 
+                                                         "numeric", "numeric", "numeric", "numeric", 
+                                                         "numeric", "numeric", "numeric", "numeric"))
+
+```
+
+
+
+```{r}
+#Validity check
+rm(list=ls())
+
+inputs<-seq(100, 1200, by=100 )
+
+update<-function(input, prev_val)
+{
+  tmp<-20*input-prev_val+sample(c(-1000,0,1000), 1)
+  if (tmp<1000)
+  {
+    tmp<-1000
+  }
+  if (tmp>12000)
+  {
+    tmp<-12000
+  }
+  
+  tmp
+}
+
+reward<-rep(NA, 1000)
+for (run in 1:1000)
+{
+  init_input<-600
+  init_val<-6000
+  
+  output<-rep(NA, 30)
+  
+  output[1]<-update(init_input, init_val)
+  for(i in 2:30)
+  {
+    
+    this_input<-sample(inputs, 1) 
+    output[i]<-update(this_input, output[i-1])
+  }
+  reward[run]<-sum(output>=8000 & output<=10000)
+}
+
+mean(reward)
+sd(reward)
+```
+
+
+
+```{r}
+#Comparison between the mean reward
+
+#data summary for 3 agents 
+data_summary2 <- data.frame(
+  Agent = c("Human", "ChatGPT3.5", "ChatGPT4"),
+  MeanScore = c(mean(df_h$total_reward, na.rm = TRUE), mean(df_ai$total_reward, na.rm = TRUE), mean(df_gpt4$total_reward, na.rm = TRUE)),
+  StdError = c(sd(df_h$total_reward, na.rm = TRUE) / sqrt(nrow(df_h)), 
+               sd(df_ai$total_reward, na.rm = TRUE) / sqrt(nrow(df_ai)),
+               sd(df_gpt4$total_reward, na.rm =TRUE) / sqrt(nrow(df_gpt4)))
+)
+
+
+validity_check <- data.frame(Agent = "Validity Check", MeanScore = 3.576, StdError = 0.3111794) #the sanity check results at the time of plotting for this dissertation were m=3.576 and std error=0.3111794
+data_summary3 <- rbind(data_summary2, validity_check)
+
+mreward1 <- ggplot(data_summary3, aes(x = Agent, y = MeanScore, fill = Agent)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.5) +
+  geom_errorbar(aes(ymin = MeanScore - StdError, ymax = MeanScore + StdError), 
+                width = .2, position = position_dodge(.5)) +
+  geom_hline(yintercept = 3.576, linetype = "dashed", color = "darkgrey", size = 1) +
+  theme_minimal() +
+  labs(title = "Comparison of Mean Reward Between Agents", x = "Agent", y = "Mean Score") +
+  scale_fill_brewer(palette = "Pastel1") 
+print(mreward1)
+```
+
+```{r}
+#Descriptive plots
+
+#Histogram of the distribution of total reward scores 
+
+df_h$AgentType <- 'Human'
+df_ai$AgentType <- 'ChatGPT 3.5'
+df_gpt4$AgentType <- 'ChatGPT 4'
+  
+  
+df_human_selected <- df_h[, c("total_reward", "AgentType")]
+df_gpt4_selected <- df_gpt4[, c("total_reward", "AgentType")]  
+df_ai_selected <- df_ai[, c("total_reward", "AgentType")] 
+
+df_combined_data <- rbind(df_human_selected, df_gpt4_selected, df_ai_selected)
+plot_gpt35 <- ggplot(df_combined_data[df_combined_data$AgentType == 'ChatGPT 3.5', ], aes(x = total_reward)) +
+  geom_histogram(binwidth = 1, fill = "#FF0000", color = "black") +
+  labs(title = "GPT 3.5", x = "Total Reward", y = "Frequency") +
+  theme_minimal()
+
+plot_gpt4 <- ggplot(df_combined_data[df_combined_data$AgentType == 'ChatGPT 4', ], aes(x = total_reward)) +
+  geom_histogram(binwidth = 1, fill = "#56B4E9", color = "black") +
+  labs(title = "GPT 4", x = "Total Reward", y = "Frequency") +
+  theme_minimal()
+
+plot_human <- ggplot(df_combined_data[df_combined_data$AgentType == 'Human', ], aes(x = total_reward)) +
+  geom_histogram(binwidth = 1, fill = "#00FF00", color = "black") +
+  labs(title = "Human", x = "Total Reward", y = "Frequency") +
+  theme_minimal()
+
+combined_plot <- plot_gpt35 + plot_gpt4 + plot_human + 
+  plot_layout(ncol = 3) 
+
+print(combined_plot)
+
+
+#Density plots
+
+density_plot <- ggplot(df_combined_data, aes(x = total_reward, color = AgentType)) +
+  geom_density(size = 1.5, adjust = 0.7, alpha = 0.7) +  # Adjust 'size' and 'adjust' as needed
+  labs(title = "Density of Total Rewards by Agent",
+       x = "Total Reward",
+       y = "Density") +
+  scale_color_brewer(palette = "Set1") +  # Using color to differentiate agents
+  theme_minimal() +
+  theme(text = element_text(size = 12),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 12))
+print(density_plot)
+
+```
+
+```{r}
+#T tests
+#GPT3.5 VS Human
+t_test_result <- t.test(df_h$total_reward, df_ai$total_reward, 
+                        na.action = na.omit, 
+                        var.equal = TRUE, paired = F) #Assuming equal variances
+
+#GPT 4 VS Human 
+t_test_4 <- t.test(df_h$total_reward, df_gpt4$total_reward)
+
+#GPT 3.5 vs 4
+t_test_between_gpt <- t.test(df_ai$total_reward, df_gpt4$total_reward)
+
+# Printing tables of t tests
+# Extract relevant information from t-test results
+t_test_data <- data.frame(
+  Test = c("Human vs. ChatGPT3.5", "Human vs. ChatGPT4"),
+  t = c(t_test_result$statistic, t_test_4$statistic),
+  df = c(t_test_result$parameter, t_test_4$parameter),
+  p_value = c(t_test_result$p.value, t_test_4$p.value),
+  Mean_Difference = c(mean(df_h$total_reward) - mean(df_ai$total_reward), 
+                      mean(df_h$total_reward) - mean(df_gpt4$total_reward)),
+  CI_Lower = c(t_test_result$conf.int[1], t_test_4$conf.int[1]),
+  CI_Upper = c(t_test_result$conf.int[2], t_test_4$conf.int[2])
+)
+
+t_test_data2 <- data.frame(
+  Test = c("Human vs. ChatGPT3.5", "Human vs. ChatGPT4", "ChatGPT3.5 vs. ChatGPT4"),
+  t = c(t_test_result$statistic, t_test_4$statistic, t_test_between_gpt$statistic),
+  df = c(t_test_result$parameter, t_test_4$parameter, t_test_between_gpt$parameter),
+  p_value = c(t_test_result$p.value, t_test_4$p.value, t_test_between_gpt$p.value),
+  Mean_Difference = c(mean(df_h$total_reward) - mean(df_ai$total_reward), 
+                      mean(df_h$total_reward) - mean(df_gpt4$total_reward),
+                      mean(df_ai$total_reward) - mean(df_gpt4$total_reward)),
+  CI_Lower = c(t_test_result$conf.int[1], t_test_4$conf.int[1], t_test_between_gpt$conf.int[1]),
+  CI_Upper = c(t_test_result$conf.int[2], t_test_4$conf.int[2], t_test_between_gpt$conf.int[2])
+)
+
+
+kable_table2 <- kable(t_test_data2, "html", digits = 3) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>%
+  column_spec(1, bold = TRUE) %>%
+  column_spec(3, width = "100px") %>%
+  scroll_box(width = "100%", height = "500px")
+
+kable_table2
+```
+
+
+```{r}
+#Average production outputs across 30 trials 
+
+#Pivot longer
+
+human_long <- df_h %>%
+  select(matches("trial[1-9][0-9]*_out")) %>%
+  mutate(Trial = row_number()) %>%
+  pivot_longer(-Trial, names_to = "TrialNum", values_to = "Performance", names_pattern = "trial([0-9]+)_out") %>%
+  mutate(Performance = as.numeric(Performance), Agent = "Human")
+
+ai_long <- df_ai %>%
+  select(starts_with("production_")) %>%
+  mutate(Trial = row_number()) %>%
+  pivot_longer(-Trial, names_prefix = "production_", names_to = "TrialNum", values_to = "Performance") %>%
+  mutate(Agent = "ChatGPT3.5")
+
+gpt4_long <- df_gpt4 %>%
+  select(starts_with("production_")) %>%
+  mutate(Trial = row_number()) %>%
+  pivot_longer(-Trial, names_prefix = "production_", names_to = "TrialNum", values_to = "Performance") %>%
+  mutate(Agent = "ChatGPT4")
+
+
+all_combined <- bind_rows(human_long, ai_long, gpt4_long) %>%
+  group_by(TrialNum, Agent) %>%
+  summarise(
+    MeanPerformance = mean(Performance, na.rm = TRUE),
+    StdDev = sd(Performance, na.rm = TRUE)  # Calculate standard deviation for error bars
+  ) %>%
+  ungroup()
+all_combined$TrialNum <- as.numeric(as.character(all_combined$TrialNum))
+
+avg_perf_2 <- ggplot(all_combined, aes(x = TrialNum, y = MeanPerformance, color = Agent)) + 
+  geom_point() +  # Only points, no lines
+  geom_errorbar(aes(ymin = MeanPerformance - StdDev, ymax = MeanPerformance + StdDev), 
+                width = 0.2, color = "gray40", alpha = 0.5) +  # Adjusted color and transparency
+  geom_hline(yintercept = 8000, linetype = "dashed", color = "yellow") +  # Lower bound of target range
+  geom_hline(yintercept = 10000, linetype = "dashed", color = "yellow") +  # Upper bound of target range
+  facet_wrap(~ Agent) +  # Separate panels for each agent
+  theme_minimal() +
+  labs(title = "Average Performance Across 30 Trials",
+       subtitle = "Separated by Agent Type",
+       x = "Trial",
+       y = "Mean Performance") +
+  scale_color_manual(values = c("Human" = "blue", "ChatGPT4" = "green", "ChatGPT3.5" = "red")) +
+  scale_x_continuous(breaks = 1:30)  # Ensures that x-axis has breaks from 1 to 30
+
+print(avg_perf_2)
+```
+
+
+```{r}
+#Logistic regression model
+names(df_ai)[names(df_ai) == "file_name"] <- "upi"
+
+human_long2 <- df_h %>%
+  select(matches("trial[1-9][0-9]*_out")) %>%
+  mutate(upi = row_number()) %>%
+  pivot_longer(-upi, names_prefix = "trial", names_pattern = "(\\d+)_out", names_to = "TrialNum", values_to = "Performance") %>%
+  mutate(Agent = "Human")
+
+ai_long2 <- df_ai %>%
+  select(starts_with("production_")) %>%
+  mutate(upi = row_number()) %>%
+  pivot_longer(-upi, names_prefix = "production_", names_to = "TrialNum", values_to = "Performance") %>%
+  mutate(Agent = "ChatGPT 3.5")
+
+gpt4_long2 <- df_gpt4 %>%
+  select(starts_with("production_")) %>%
+  mutate(upi = row_number()) %>%
+  pivot_longer(-upi, names_prefix = "production_", names_to = "TrialNum", values_to = "Performance") %>%
+  mutate(Agent = "ChatGPT 4")
+
+
+com_log <- bind_rows(human_long2, ai_long2, gpt4_long2) %>%
+  mutate(
+    Agent = factor(Agent, levels = c("Human", "ChatGPT 3.5", "ChatGPT 4")),
+    TrialNum = as.numeric(TrialNum),
+    upi = as.factor(upi) 
+  )
+
+
+com_log$Target_Hit <- ifelse(com_log$Performance >= 8000 & com_log$Performance <= 10000, 1, 0)
+
+
+com_m <- glmer(
+  Target_Hit ~ Agent * TrialNum + (1|upi),
+  data = com_log,
+  family = binomial(link = "logit")
+)
+
+# Summary of the model
+summary(com_m)
+
+tab_model(com_m)
+#Assumption checks
+performance::check_model(com_m)
+```
+
+
+
+```{r}
+#logistic model without interaction
+com_m_no_inter <- glmer(
+  Target_Hit ~ Agent + TrialNum + (1|upi),
+  data = com_log,
+  family = binomial(link = "logit")
+)
+summary(com_m_no_inter)
+
+#plotting the model
+tab_model(com_m_no_inter)
+
+performance::check_model(com_m_no_inter)
+```
+
+
+
+```{r}
+#Linear mixed effect model
+#Data processing
+
+#human data
+n_participants <- nrow(df_h)
+trial_data <- list()
+
+for (i in 2:30) {
+  trial_data[[i-1]] <- data.frame(
+    upi = df_h$upi,  # The participant ID
+    Agent_decision = df_h[[paste0("trial", i, "_in")]],
+    Previous_production = df_h[[paste0("trial", i-1, "_out")]],
+    trial_number = i
+  )
+}
+
+learning_h <- do.call(rbind, trial_data)%>%
+   mutate(AgentType = "Human")
+
+
+learning_h$Previous_production <- scale(learning_h$Previous_production)
+
+#GPT 3.5 data
+learning_gpt3.5 <- df_ai %>%
+  pivot_longer(
+    cols = matches("^(gpt_decision|production)_\\d+$"),  
+    names_to = c(".value", "trial_number"),
+    names_pattern = "^(gpt_decision|production)_(\\d+)$"  
+  ) %>%
+  group_by(upi) %>%
+  mutate(
+    Previous_production = lag(production, default = NA),
+    Agent_decision = gpt_decision 
+  ) %>%
+  filter(!is.na(Previous_production)) %>%
+  ungroup() %>%
+  select(upi, AgentType, Agent_decision, Previous_production, trial_number)%>%
+  mutate(Previous_production = scale(Previous_production)) 
+
+#GPT 4 data
+learning_gpt4 <- df_gpt4 %>%
+  mutate(upi = file_name) %>%
+  pivot_longer(
+    cols = matches("^(gpt_decision|production)_\\d+$"), # Match columns more precisely
+    names_to = c(".value", "trial_number"),
+    names_pattern = "^(gpt_decision|production)_(\\d+)$" # Ensure correct regex grouping
+  ) %>%
+  group_by(upi) %>%
+  mutate(Previous_production = lag(production, default = NA),
+         Agent_decision = gpt_decision ) %>%
+  filter(!is.na(Previous_production)) %>%
+  ungroup() %>%
+  select(upi, AgentType, Agent_decision, Previous_production, trial_number)%>%
+  mutate(Previous_production = scale(Previous_production))
+
+#bind all agents and lmer test
+learn_all <- rbind(learning_h, learning_gpt3.5, learning_gpt4)%>%
+  mutate(AgentType = factor(AgentType, levels = c("Human", "ChatGPT 3.5", "ChatGPT 4")))
+
+learn_all_model <- lmer(Agent_decision ~ Previous_production * AgentType + (1 | upi), data = learn_all)
+summary(learn_all_model)
+
+tab_model(learn_all_model)
+#assumption check
+performance::check_model(learn_all_model)
+```
+
